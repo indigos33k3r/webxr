@@ -280,6 +280,91 @@ When the canvas receives a `pointerdown` event an `XRInputSource` is created wit
 
 For each of these events the `XRInputSource`'s target ray must be updated to originate at the point that was interacted with on the canvas, projected onto the near clipping plane (defined by the `depthNear` attribute of the `XRSession`) and extending out into the scene along that projected vector.
 
+## Controller State
+
+Some applications need more than point-and-click style interaction provided by the `select` events. For devices that make use of controllers, more complete information about the state of those controller's inputs (buttons, triggers, touchpads, etc) can be observed via the `XRInputSource`'s `controller` attribute.
+
+The `controller` attribute is an instance of the `XRTrackedController` interface if the `XRInputState` represents an XR controller device with a subset of common inputs, or `null` otherwise. Examples of controllers that may expose their state this way include Oculus Touch, Vive wands, Oculus Go and Daydream controllers, or other similar devices. More traditional gamepads, such as XBox or Playstation controllers, should not be exposed using this interface, nor should tracked devices without discreet inputs, such as optical hand tracking. The intent of the `XRTrackedController` interface is not to capture the complete range of inputs for all possible current and future XR controllers, but instead to expose the most commonly observed inputs in an easy-to-consume fashion.
+
+A tracked controller reports the state of several input types that are commonly found on XR controllers. These are:
+
+ - Joystick
+ - Touchpad
+ - Trigger
+ - Grip button
+
+The `XRTrackedController` also exposes a list of "Extended" inputs to capture controller elements who's semantic meanings are not captured in the list above, such as face buttons.
+
+Aside from the `extended` list it is assumed that each controller either has zero or one of the above inputs. If the controller does not have one of the inputs listed above the corresponding attribute in the `controller` object must be `null`.
+
+Each input, if present, is represented as an `XRTrackedControllerState` instance. How the  values are interpreted depends on the inputs in question, but there are common guidelines to their use.
+
+  * `pressed` is a boolean that indicates if the input is physically pressed down. If the input cannot detect when it is pressed this value must be false. If the input represents an analog button or trigger `pressed` should be `true` if the analog value is greater than a system-recommended threshold.
+  * `touched` is a boolean that indicates if the input is currently being touched by the user. If the input is not capacitive (cannot detect touch) this value should mirror the `pressed` value. If the input represents an analog button or trigger `touched` should be `true` any time the analog value is non-zero.
+  * `value` is an array of doubles that represents the analog value(s) of the input. If the input represents an analog button or trigger `values` should have a single element who's value represents the full range of input normalized to a `[0, 1]` range, with `1` meaning "100% engaged". If the input represents a joystick, touchpad, or other logical group of axes `values` should have one element for each axis and report their movement range normalized to a `[-1, 1]` range, with `0` representing the neutral position of the axis. If the input is a touchpad all `value`s should report `0` when the user is not touching the input.
+
+Each input also has a `name` which is a human readable label that should correspond to the name the platform gives for the input if possible. For example, inputs in the `extended` array may have names like "A", "B", "X", and "Y". If a platform-specific name cannot be determined the name should reflect the input's semantic type, such as "Touchpad" or "Button 0".
+
+```js
+function onXRFrame(timestamp, frame) {
+  let inputSource = xrSession.getInputSources()[0];
+
+  // Check to see if the input source is a controller.
+  if (inputSource.controller) {
+    
+    // Determine if the controller has a joystick with at least 2 axes.
+    let joystick = inputSource.controller.joystick;
+    if (joystick && joystick.value.length >= 2) {
+      MoveUser(joystick.value[0], joystick.value[1]);
+    }
+
+    // Determine if the controller has at least one extended input, such as a
+    // face button.
+    if (inputSource.controller.extended.length > 0) {
+      let extended0 = inputSource.controller.extended[0];
+      if (extended0.pressed) {
+        EmitPaint();
+      }
+    }
+    
+    // etc.
+  }
+
+  // Do the rest of typical frame processing...
+}
+```
+
+If the application includes interactions that require user activation (such as starting media playback), the application can listen to the `XRInputSource`s `select` events, which fire for every pressed and released input on the controller. When triggered by a controller input, the `XRInputSourceEvent` will include a non-null `XRTrackedControllerState` to indicate which input triggered the event.
+
+The UA may update the controller state at any point, which the restriction that it must remain constant during the running of each batch of `XRSession` `requestAnimationFrame` callbacks.
+
+> Note: You might wonder why `XRTrackedController` isn't tied to an `XRFrame` like the `XRInputPose` is. The answer is that data exposed by `XRFrame` is intended to be highly timing dependent, and have a limited useful lifespan. Poses are continuously changing, demand low latency, and are typically projected forward to a specific point in time. The also must be queried relative to a specific `XRFrameOfReference`. By contrast, the values reported by a `XRTrackedControllerState` change with comparatively lower frequency, are less sensitive to latency requirements, and can be reasonably inspected outside the core frame loop without concerns of the data becoming unusably stale, and carry no spatial data so there's no need to associate them with an `XRFrameOfReference`. As such, it's preferable to aim fot the better API ergonomics offered by making `XRTrackedController` more persistently available. 
+>
+> Despite this, it's still expected that most implementations will update `XRTrackedController`s in sync with the rest of the data delivered by an `XRFrame`.
+
+### Exposing standard controllers with an action maps
+
+Some native APIs rely on what's commonly referred to as an "action mapping" system to handle controller input. In action map systems the developer creates a list of application-specific actions (such as "undo" or "jump") and suggested input bindings (like "left hand touchpad") that should trigger the related action. Such systems may allow users to re-bind the inputs associated with each action, and may not provide a mechanism for enumerating or monitoring the inputs outside of the action map.
+
+When using an API that limits reading controller input to use of an action map, it is suggested that a mapping be created with one action per possible input, given the same name as the target input. For example, an similar mapping to the following may be used for each device:
+
+| XRTrackedController attribute | Action name | Suggested binding  |
+|-------------------------------|-------------|--------------------|
+| trigger                       | "trigger"   | "[device]/trigger" |
+| grip                          | "grip"      | "[device]/grip"    |
+| touchpad                      | "touchpad"  | "[device]/touchpad"|
+| joystick                      | "joystick"  | "[device]/joystick"|
+| extended[0]                   | "extended0" | "[device]/a"       |
+| extended[1]                   | "extended1" | "[device]/b"       |
+| extended[2]                   | "extended2" | "[device]/x"       |
+| extended[3]                   | "extended3" | "[device]/y"       |
+
+If the API does not provided a way to enumerate the available input devices, the UA should provide bindings for the left and right hand instead of a specific device and expose a `XRTrackedController` for any hand that has at least one non-`null` input.
+
+It's assumed that the action mapping system will have a mechanism for reporting when a binding failed, at which point the correlated `XRTrackedController` attribute should be set to `null` to indicate the input is not available. For `extended`, gaps should not be left in the array and as such if a higher index input is present but a lower index one is not they should be shifted down till all available inputs are closely packed. (It is unlikely that there will be more than, for example, 4 face buttons per hand, but if the system exposes a reasonable way to map additional buttons the UA is welcome to expose them.)
+
+The UA should not make any attempt to circumvent user remapping of the inputs.
+
 ## Appendix A: Proposed partial IDL
 This is a partial IDL and is considered additive to the core IDL found in the main [explainer](explainer.md).
 ```webidl
@@ -337,6 +422,24 @@ interface XRInputSource {
   readonly attribute XRTargetRayMode targetRayMode;
   readonly attribute XRSpace targetRaySpace;
   readonly attribute XRSpace? gripSpace;
+  readonly attribute XRTrackedController? controller;
+};
+
+[SecureContext, Exposed=Window]
+interface XRTrackedControllerState {
+  readonly attribute DOMString name;
+  readonly attribute boolean pressed;
+  readonly attribute boolean touched;
+  readonly attribute FrozenArray<double> value;
+};
+
+[SecureContext, Exposed=Window]
+interface XRTrackedController {
+  readonly attribute XRTrackedControllerState? trigger;
+  readonly attribute XRTrackedControllerState? joystick;
+  readonly attribute XRTrackedControllerState? touchpad;
+  readonly attribute XRTrackedControllerState? grip;
+  readonly attribute FrozenArray<XRTrackedControllerState> extended;
 };
 
 //
@@ -357,10 +460,12 @@ dictionary XRSessionEventInit : EventInit {
 interface XRInputSourceEvent : Event {
   readonly attribute XRFrame frame;
   readonly attribute XRInputSource inputSource;
+  readonly attribute XRTrackedControllerState? controllerState;
 };
 
 dictionary XRInputSourceEventInit : EventInit {
   required XRFrame frame;
   required XRInputSource inputSource;
+  attribute XRTrackedControllerState controllerState;
 };
 ```
