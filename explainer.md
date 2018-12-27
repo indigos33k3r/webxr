@@ -587,7 +587,7 @@ dictionary XRSessionCreationOptions {
   attribute EventHandler onfocus;
   attribute EventHandler onend;
 
-  Promise<void> updateRenderState(XRRenderStateInit state);
+  Promise<void> updateRenderState(optional XRRenderStateInit state);
 
   long requestAnimationFrame(XRFrameRequestCallback callback);
   void cancelAnimationFrame(long handle);
@@ -605,7 +605,7 @@ enum XREnvironmentBlendMode {
   "alpha-blend",
 };
 
-dictionary XRRenderStateOptions {
+dictionary XRRenderStateInit {
   double depthNear;
   double depthFar;
   XRLayer baseLayer;
