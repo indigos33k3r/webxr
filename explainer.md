@@ -608,7 +608,7 @@ enum XREnvironmentBlendMode {
 dictionary XRRenderStateInit {
   double depthNear;
   double depthFar;
-  XRLayer baseLayer;
+  XRLayer? baseLayer;
 };
 
 [SecureContext, Exposed=Window] interface XRRenderState {
