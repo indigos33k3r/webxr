@@ -382,7 +382,7 @@ When the <dfn method for="XRSession">updateRenderState(|newState|)</dfn> method 
 
 </div>
 
-NOTE: The [=active render state=] of an {{XRSession}} is constant for the full duration of an [=XR animation frame=], and is defined as the [=pending render state=] when the first {{XRSession/requestAnimationFrame()}} call that initiates the [=XR animation frame=] is made. 
+NOTE: The [=active render state=] of an {{XRSession}} is constant for the full duration of an [=XR animation frame=]. 
 
 <div class="algorithm" data-algorithm="request-reference-space">
 
